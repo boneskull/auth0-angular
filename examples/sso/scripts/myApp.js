@@ -33,11 +33,12 @@ myApp.config(function ($routeProvider, authProvider, $httpProvider, jwtIntercept
     loginUrl: '/login'
   });
 
-  authProvider.on('loginSuccess', function($location, profilePromise, idToken, store, state) {
+  authProvider.on('loginSuccess', function($location, profilePromise, idToken, refreshToken, store) {
     $location.path('/');
+    store.set('token', idToken);
+    store.set('refreshToken', refreshToken);
     profilePromise.then(function(profile) {
       store.set('profile', profile);
-      store.set('token', idToken);
     });
   });
 
@@ -45,8 +46,20 @@ myApp.config(function ($routeProvider, authProvider, $httpProvider, jwtIntercept
   // NOTE: in case you are calling APIs which expect a token signed with a different secret, you might
   // want to check the delegation-token example
 
-  jwtInterceptorProvider.tokenGetter = function(store) {
-    return store.get('token');
+  jwtInterceptorProvider.tokenGetter = function(store, jwtHelper, auth) {
+    var idToken = store.get('token');
+    var refreshToken = store.get('refreshToken');
+    if (!idToken || !refreshToken) {
+      return null;
+    }
+    if (jwtHelper.isTokenExpired(idToken)) {
+      return auth.refreshIdToken(refreshToken).then(function(idToken) {
+        store.set('token', idToken);
+        return idToken;
+      });
+    } else {
+      return idToken;
+    }
   }
 
   // Add a simple interceptor that will fetch all requests and add the jwt token to its authorization header.
@@ -57,9 +70,19 @@ myApp.config(function ($routeProvider, authProvider, $httpProvider, jwtIntercept
   function checkForToken() {
     if (!auth.isAuthenticated) {
       var token = store.get('token');
+      var refreshToken = store.get('refreshToken');
       if (token) {
         if (!jwtHelper.isTokenExpired(token)) {
           auth.authenticate(store.get('profile'), token);
+        } else {
+          if (refreshToken) {
+            return auth.refreshIdToken(refreshToken).then(function(idToken) {
+              store.set('token', idToken);
+              auth.authenticate(store.get('profile'), idToken);
+            });
+          } else {
+            $location.path('/login');
+          }
         }
       }
     }

@@ -15,6 +15,9 @@ myApp.controller('LoginCtrl', function (auth, $scope) {
 
   $scope.login = function() {
     auth.signin({
+      authParams: {
+        scope: 'openid offline_access'
+      },
       responseType: 'token'
     });
   }
